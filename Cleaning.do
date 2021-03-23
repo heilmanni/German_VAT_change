@@ -32,15 +32,22 @@ replace services = "0" if services == ""
 *Creating new variables for the years and for the months
 gen year = real(substr(TIME, 1, 4))
 gen month = real(substr(TIME, 6, 7))
-gen period = ym(year, month)
+gen period = ym(year, month)-659
+
+drop year
+drop TIME
+drop month
+
+*if you want to give an id to COICOP:
+//egen item_new = group( COICOP )
+*don't forget: egen will create id-s in alphabetical order; but reshaping will do the same
+
+reshape wide Value, i( COICOP ) j( period )
+
 
 *Modifying the format of the pricelevel
-gen pricelevel = real(Value)
-drop Value
+//gen pricelevel = real(Value)
+//drop Value
 
 *Reshaping my paneldata
-
-
-
-//Looking for some interesting data
-hist  if hospitality==1 & year == 2015)
+export excel reshaped
