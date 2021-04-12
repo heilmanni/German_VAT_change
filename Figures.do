@@ -68,8 +68,9 @@ total weights if level == 4 & per == 1 //this is 1000
 total weights if (level == 4 | level == 5) & per == 1 & (normal == 1 | reduced == 1 | taxfree == 1 | hospitality  == 1) & correction != 1 //this is 1000.12 due to level 5 items whose value are rounded
 //the correction category is denoting items on level 4 which are not homogenous in regard of vat-rate (normal + red + taxfree + hosp != 1)
 
-
-
+gen date = per + 659
+xtset date
+format date %tm
 
 ****************************** FIGURES *****************************************
 
@@ -109,34 +110,34 @@ total rel_w_goods_red_2 if per == 1
 
 
 //counting the average of particular items in each period
-collapse (sum) aggr_goods goods_w_price goods_w_price_norm goods_w_price_red if goods_4_5 == 1 | goods_4_5_norm == 1 | goods_4_5_red == 1 | COICOP == "Non-energy industrial goods", by(per)
+collapse (sum) aggr_goods goods_w_price goods_w_price_norm goods_w_price_red if goods_4_5 == 1 | goods_4_5_norm == 1 | goods_4_5_red == 1 | COICOP == "Non-energy industrial goods", by(date)
 
 *Figures
 
 cd "c:\Users\Istvan\Documents\BCE Mester\Szakdolgozat\Ábrák"
 
 //official vs created
-twoway connected aggr_goods goods_w_price per, sort xtitle("Period") ytitle("Average monthly change (logpercent)")legend(label(1 "official") label(2 "constructed")) lcolor(edkblue erose) mcolor(edkblue erose) title("Non-energy industrial goods: official and created")
-twoway connected aggr_goods goods_w_price per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "hivatalos") label(2 "szerkesztett")) lcolor(edkblue erose) mcolor(edkblue erose) title("Nem energetikai ipari termékek")
+twoway connected aggr_goods goods_w_price date, sort xtitle("Period") ytitle("Average monthly change (logpercent)")legend(label(1 "official") label(2 "constructed")) lcolor(edkblue erose) mcolor(edkblue erose) title("Non-energy industrial goods: official and created")
+twoway connected aggr_goods goods_w_price date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "hivatalos") label(2 "szerkesztett")) lcolor(edkblue erose) mcolor(edkblue erose) title("Nem energetikai ipari termékek")
 //Export
 graph export 1a_goods_off_created.png
 
 //whole category and normal
-twoway connected goods_w_price goods_w_price_norm per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Nem energetikai ipari termékek: teljes és normál áfa-kulcsú")
+twoway connected goods_w_price goods_w_price_norm date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Nem energetikai ipari termékek: teljes és normál áfa-kulcsú")
 //Export
 graph export 1b_goods_gen_norm.png
 
 //whole category and reduced
-twoway connected goods_w_price goods_w_price_red per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "csökkentett áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Nem energetikai ipari termékek: teljes és csökkentett áfa-kulcsú")
+twoway connected goods_w_price goods_w_price_red date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "csökkentett áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Nem energetikai ipari termékek: teljes és csökkentett áfa-kulcsú")
 //Export
 graph export 1c_goods_gen_red.png
 
 //whole, normal and reduced
-twoway connected goods_w_price goods_w_price_norm goods_w_price_red per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek") label(3 "csökkentett áfa-kulcsú")) lcolor(edkblue erose eltgreen) mcolor(edkblue erose eltgreen) subtitle("Nem energetikai ipari termékek összehasonlítása áfa-kulcsonként")
+twoway connected goods_w_price goods_w_price_norm goods_w_price_red date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek") label(3 "csökkentett áfa-kulcsú")) lcolor(edkblue erose eltgreen) mcolor(edkblue erose eltgreen) subtitle("Nem energetikai ipari termékek összehasonlítása áfa-kulcsonként")
 graph export 1d_goods_gen_norm_red.png
 
 //normal and reduced
-twoway connected goods_w_price_norm goods_w_price_red per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "sztenderd áfa-kulcs") label(2 "csökkentett áfa-kulcs")) lcolor(edkblue erose) mcolor(edkblue erose) subtitle("Nem energetikai ipari termékek: sztenderd és csökkentett áfa-kulcs")
+twoway connected goods_w_price_norm goods_w_price_red date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "sztenderd áfa-kulcs") label(2 "csökkentett áfa-kulcs")) lcolor(edkblue erose) mcolor(edkblue erose) subtitle("Nem energetikai ipari termékek: sztenderd és csökkentett áfa-kulcs")
 //Export
 graph export 1e_goods_norm_red.png
 
@@ -200,6 +201,9 @@ replace nov = 0 if missing(nov)
 gen dec = 1 if time == 12
 replace dec = 0 if missing(dec)
 
+gen date = per + 659
+xtset date
+format date %tm
 
 
 
@@ -239,35 +243,35 @@ total rel_w_pfood_red_2 if per == 1
 
 
 //counting the average of particular items in each period
-collapse (sum) aggr_pfood pfood_w_price pfood_w_price_norm pfood_w_price_red if pfood_4_5 == 1 | pfood_4_5_norm == 1 | pfood_4_5_red == 1 | COICOP == "Processed food excluding alcohol and tobacco", by(per)
+collapse (sum) aggr_pfood pfood_w_price pfood_w_price_norm pfood_w_price_red if pfood_4_5 == 1 | pfood_4_5_norm == 1 | pfood_4_5_red == 1 | COICOP == "Processed food excluding alcohol and tobacco", by(date)
 
 *Figures
 
 cd "c:\Users\Istvan\Documents\BCE Mester\Szakdolgozat\Ábrák"
 
 //official vs created
-twoway connected aggr_pfood pfood_w_price per, sort xtitle("Period") ytitle("Average monthly change (logpercent)")legend(label(1 "official") label(2 "constructed")) lcolor(edkblue erose) mcolor(edkblue erose) title("Processed food")
-twoway connected aggr_pfood pfood_w_price per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "hivatalos") label(2 "szerkesztett")) lcolor(edkblue erose) mcolor(edkblue erose) title("Feldolgozott élelmiszerek")
+twoway connected aggr_pfood pfood_w_price date, sort xtitle("Period") ytitle("Average monthly change (logpercent)")legend(label(1 "official") label(2 "constructed")) lcolor(edkblue erose) mcolor(edkblue erose) title("Processed food")
+twoway connected aggr_pfood pfood_w_price date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "hivatalos") label(2 "szerkesztett")) lcolor(edkblue erose) mcolor(edkblue erose) title("Feldolgozott élelmiszerek")
 //Export
 graph export 2a_pfood_off_created.png
 
 //whole category and normal
-twoway connected pfood_w_price pfood_w_price_norm per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Feldolgozott élelmiszerek")
+twoway connected pfood_w_price pfood_w_price_norm date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Feldolgozott élelmiszerek")
 //Export
 graph export 2b_pfood_gen_norm.png
 
 //whole category and reduced
-twoway connected pfood_w_price pfood_w_price_red per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "csökkentett áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Feldolgozott élelmiszerek")
+twoway connected pfood_w_price pfood_w_price_red date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "csökkentett áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Feldolgozott élelmiszerek")
 //Export
 graph export 2c_pfood_gen_red.png
 
 //whole, normal and reduced
-twoway connected pfood_w_price pfood_w_price_norm pfood_w_price_red per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek") label(3 "csökkentett áfa-kulcsú")) lcolor(edkblue erose eltgreen) mcolor(edkblue erose eltgreen) subtitle("Feldolgozott élelmiszerek összehasonlítása áfa-kulcsonként")
+twoway connected pfood_w_price pfood_w_price_norm pfood_w_price_red date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek") label(3 "csökkentett áfa-kulcsú")) lcolor(edkblue erose eltgreen) mcolor(edkblue erose eltgreen) subtitle("Feldolgozott élelmiszerek összehasonlítása áfa-kulcsonként")
 //Export
 graph export 2d_pfood_gen_norm_red.png
 
 //normal and reduced
-twoway connected pfood_w_price_norm pfood_w_price_red per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "sztenderd áfa-kulcs") label(2 "csökkentett áfa-kulcs")) lcolor(edkblue erose) mcolor(edkblue erose) subtitle("Feldolgozott élelmiszerek: sztenderd és csökkentett áfa-kulcs")
+twoway connected pfood_w_price_norm pfood_w_price_red date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "sztenderd áfa-kulcs") label(2 "csökkentett áfa-kulcs")) lcolor(edkblue erose) mcolor(edkblue erose) subtitle("Feldolgozott élelmiszerek: sztenderd és csökkentett áfa-kulcs")
 //Export
 graph export 2e_pfood_norm_red.png
 
@@ -330,6 +334,9 @@ replace nov = 0 if missing(nov)
 gen dec = 1 if time == 12
 replace dec = 0 if missing(dec)
 
+gen date = per + 659
+xtset date
+format date %tm
 
 
 
@@ -382,44 +389,44 @@ total rel_w_service_taxfree_2 if per == 1
 
 
 //counting the average of particular items in each period
-collapse (sum) aggr_service_1 aggr_service_2 aggr_service_3 service_w_price service_w_price_norm service_w_price_red service_w_price_hosp service_w_price_taxfree if service_4_5 == 1 | service_4_5_norm == 1 | service_4_5_red == 1 | service_4_5_hosp == 1 | service_4_5_taxfree == 1 | COICOP == "Services - miscellaneous" | COICOP == "Services overall index excluding goods" | COICOP == "Services related to recreation and personal care, excluding package holidays and accommodation", by(per)
+collapse (sum) aggr_service_1 aggr_service_2 aggr_service_3 service_w_price service_w_price_norm service_w_price_red service_w_price_hosp service_w_price_taxfree if service_4_5 == 1 | service_4_5_norm == 1 | service_4_5_red == 1 | service_4_5_hosp == 1 | service_4_5_taxfree == 1 | COICOP == "Services - miscellaneous" | COICOP == "Services overall index excluding goods" | COICOP == "Services related to recreation and personal care, excluding package holidays and accommodation", by(date)
 
 *Figures
 
 cd "c:\Users\Istvan\Documents\BCE Mester\Szakdolgozat\Ábrák"
 
 //official vs created
-twoway connected aggr_service_2 service_w_price per, sort xtitle("Period") ytitle("Average monthly change (logpercent)")legend(label(1 "official") label(2 "constructed")) lcolor(edkblue erose) mcolor(edkblue erose) title("Services")
-twoway connected aggr_service_2 service_w_price per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "hivatalos") label(2 "szerkesztett")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
+twoway connected aggr_service_2 service_w_price date, sort xtitle("Period") ytitle("Average monthly change (logpercent)")legend(label(1 "official") label(2 "constructed")) lcolor(edkblue erose) mcolor(edkblue erose) title("Services")
+twoway connected aggr_service_2 service_w_price date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "hivatalos") label(2 "szerkesztett")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
 //Export
 graph export 3a_service_off_created.png
 
 //whole category and normal
-twoway connected service_w_price service_w_price_norm per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
+twoway connected service_w_price service_w_price_norm date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
 //Export
 graph export 3b_service_gen_norm.png
 
 //whole category and reduced
-twoway connected service_w_price service_w_price_red per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "csökkentett áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
+twoway connected service_w_price service_w_price_red date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "csökkentett áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
 //Export
 graph export 3c_service_gen_red.png
 
 //whole category and normal
-twoway connected service_w_price service_w_price_hosp per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "vendéglátás áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
+twoway connected service_w_price service_w_price_hosp date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "vendéglátás áfa-kulcsú termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
 //Export
 graph export 3d_service_gen_hosp.png
 
 //whole category and reduced
-twoway connected service_w_price service_w_price_taxfree per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "áfa-mentes termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
+twoway connected service_w_price service_w_price_taxfree date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "áfa-mentes termékek")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
 //Export
 graph export 3e_service_gen_taxfree.png
 
 //everything
-twoway line service_w_price service_w_price_norm service_w_price_hosp per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd") label(3 "vendéglátás")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
+twoway line service_w_price service_w_price_norm service_w_price_hosp date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "teljes (szerkesztett)") label(2 "sztenderd") label(3 "vendéglátás")) lcolor(edkblue erose) mcolor(edkblue erose) title("Szolgáltatások")
 //Export
 graph export 3f_service_gen_norm_hosp.png
 
 //normal and reduced
-twoway connected service_w_price_norm service_w_price_hosp per, sort xtitle("Periódus") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "sztenderd áfa-kulcs") label(2 "vendéglátás áfa-kulcs")) lcolor(edkblue erose) mcolor(edkblue erose) subtitle("Szolgáltatások: sztenderd és vendéglátás áfa-kulcs")
+twoway connected service_w_price_norm service_w_price_hosp date, sort xtitle("Dátum") ytitle("Havi átlagos változás (logszázalék)")legend(label(1 "sztenderd áfa-kulcs") label(2 "vendéglátás áfa-kulcs")) lcolor(edkblue erose) mcolor(edkblue erose) subtitle("Szolgáltatások: sztenderd és vendéglátás áfa-kulcs")
 //Export
 graph export 3g_service_norm_hosp.png
