@@ -1,0 +1,652 @@
+/* This .do file can be used for analysing the connection between the asymmetry
+and trendinflation of each product on COICOP level 4 and/or 5 */
+
+
+clear
+ 
+*Import the cleaned data
+import excel *set path, use Final.xlsx data*
+
+*Change the format of the data by creating new ones and dropping old ones
+gen weights = real(Weightinginpermill)
+drop Weightinginpermill
+
+forvalues i = 1(1)74 {
+gen Per`i'  = real(TIME`i')
+drop TIME`i'
+}
+
+*Reshaping data from wide to long for calculations
+reshape long Per, i( COICOP ) j(per)
+rename Per price
+rename Services service
+
+*Generate new variables for the months of VAT change
+//2020M7 introducing new VAT rates
+gen M7_2020 = 1 if per == 67
+replace M7_2020 = 0 if missing(M7_2020)
+
+//2021M1: set back to the previous VAT
+gen M1_2021 = 1 if per == 73
+replace M1_2021 = 0 if missing(M1_2021)
+
+*Creating variables for each months
+gen time = mod(per,12)
+replace time = 12 if time == 0
+
+gen jan = 1 if time == 1
+replace jan = 0 if missing(jan)
+gen feb = 1 if time == 2
+replace feb = 0 if missing(feb)
+gen mar = 1 if time == 3
+replace mar = 0 if missing(mar)
+gen apr = 1 if time == 4
+replace apr = 0 if missing(apr)
+gen may = 1 if time == 5
+replace may = 0 if missing(may)
+gen jun = 1 if time == 6
+replace jun = 0 if missing(jun)
+gen jul = 1 if time == 7
+replace jul = 0 if missing(jul)
+gen aug = 1 if time == 8
+replace aug = 0 if missing(aug)
+gen sep = 1 if time == 9
+replace sep = 0 if missing(sep)
+gen oct = 1 if time == 10
+replace oct = 0 if missing(oct)
+gen nov = 1 if time == 11
+replace nov = 0 if missing(nov)
+gen dec = 1 if time == 12
+replace dec = 0 if missing(dec)
+
+*length of the database (number of different items):
+count if per == 1 //506
+
+total weights if level == 4 & per == 1 //this is 1000
+total weights if (level == 4 | level == 5) & per == 1 & (normal == 1 | reduced == 1 | taxfree == 1 | hospitality  == 1) & correction != 1 //this is 1000.12 due to level 5 items whose value are rounded
+//the correction category denotes items on level 4 which are not homogenous in regard of vat-rate (normal + red + taxfree + hosp != 1)
+
+//to set timeseries
+generate time2 = _n
+tsset time2
+
+
+//generating trendinflation data
+gen trendinf_M6 = .
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1
+	quietly replace trendinf_M6 = (price[rownumber+60] + price[rownumber+61] + price[rownumber+62] + price[rownumber+63] + price[rownumber+64] + price[rownumber+65])/6 if _n == rownumber
+	drop rownumber
+}
+
+gen trendinf_M12 = .
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1
+	quietly replace trendinf_M12 = (price[rownumber+54] + price[rownumber+55] + price[rownumber+56] + price[rownumber+57] + price[rownumber+58] + price[rownumber+59] + price[rownumber+60] + price[rownumber+61] + price[rownumber+62] + price[rownumber+63] + price[rownumber+64] + price[rownumber+65])/12 if _n == rownumber
+	drop rownumber
+}
+
+gen trendinf_M3 = .
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1
+	quietly replace trendinf_M3 = (price[rownumber+63] + price[rownumber+64] + price[rownumber+65])/3 if _n == rownumber
+	drop rownumber
+}
+
+gen trendinf_jan_M5 = .
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1
+	quietly replace trendinf_jan_M5 = (price[rownumber+67] + price[rownumber+68] + price[rownumber+69] + price[rownumber+70] + price[rownumber+71])/5 if _n == rownumber
+	drop rownumber
+}
+
+
+
+************************ 1. NON-ENERGY INDUSTRIAL GOODS ************************
+
+
+********1.A.: GENERAL RESULTS********
+
+*Creating the relative weights of goods on level 4 or 5
+//Creating a variable for goods on level 4 and 5
+gen goods_4_5 = goods if (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if goods_4_5 == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_goods = goods_4_5*weights/217.16 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_goods
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_goods = COICOP if per == 1 & goods_4_5 == 1 
+
+//generate empty variables
+gen betas_goods_M7 = .
+gen betas_goods_M1 = .
+
+
+//regression
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_goods[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_goods[rownumber] //regress just the particular item
+	replace betas_goods_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_goods_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_goods_x_betas_M7 = rel_w_goods*betas_goods_M7
+total rel_goods_x_betas_M7 //the total effect
+
+gen rel_goods_x_betas_M1 = rel_w_goods*betas_goods_M1
+total rel_goods_x_betas_M1 //the total effect
+
+gen asym_goods = betas_goods_M7+betas_goods_M1
+
+
+********1.B.: REDUCED ITEMS********
+
+
+*Creating the relative weights of goods on level 4 or 5
+//Creating a variable for goods on level 4 and 5
+gen goods_4_5_red = goods if (level == 4 | level == 5) & red == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if goods_4_5_red == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_goods_red = goods_4_5_red*weights/18.75 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_goods_red
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_goods_red = COICOP if per == 1 & goods_4_5_red == 1 
+
+//generate two empty variables
+gen betas_goods_red_M7 = .
+gen betas_goods_red_M1 = .
+
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_goods_red[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_goods_red[rownumber] //regress just the particular item
+	replace betas_goods_red_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_goods_red_M1 = _b[M1_2021] if _n == rownumber
+
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_goods_x_betas_red_M7 = rel_w_goods_red*betas_goods_red_M7
+total rel_goods_x_betas_red_M7
+
+gen rel_goods_x_betas_red_M1 = rel_w_goods_red*betas_goods_red_M1
+total rel_goods_x_betas_red_M1
+
+gen asym_goods_red = betas_goods_red_M7 + betas_goods_red_M1
+
+
+
+********1.C.: NORMAL ITEMS********
+
+
+*Creating the relative weights of goods on level 4 or 5
+//Creating a variable for goods on level 4 and 5
+gen goods_4_5_norm = goods if (level == 4 | level == 5) & norm == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if goods_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_goods_norm = goods_4_5_norm*weights/198.41 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_goods_norm
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_goods_norm = COICOP if per == 1 & goods_4_5_norm == 1 
+
+//generate two empty variables
+gen betas_goods_norm_M7 = .
+gen betas_goods_norm_M1 = .
+
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_goods_norm[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_goods_norm[rownumber] //regress just the particular item
+	replace betas_goods_norm_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_goods_norm_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_goods_x_betas_norm_M7 = rel_w_goods_norm*betas_goods_norm_M7
+total rel_goods_x_betas_norm_M7
+
+gen rel_goods_x_betas_norm_M1 = rel_w_goods_norm*betas_goods_norm_M1
+total rel_goods_x_betas_norm_M1
+
+gen asym_goods_norm = betas_goods_norm_M7 + betas_goods_norm_M1
+
+
+//regressions
+
+drop if COICOP == "Movie on DVD or blu-ray disc" //outlier
+
+regress asym_goods trendinf_M6
+regress asym_goods trendinf_M3
+regress asym_goods trendinf_M12
+regress asym_goods trendinf_jan_M5
+
+regress asym_goods_red trendinf_M6
+regress asym_goods_red trendinf_M3
+regress asym_goods_red trendinf_M12
+regress asym_goods_red trendinf_jan_M5
+
+regress asym_goods_norm trendinf_M6
+regress asym_goods_norm trendinf_M3
+regress asym_goods_norm trendinf_M12
+regress asym_goods_norm trendinf_jan_M5
+
+//export the the asymmetry variables
+//export excel COICOP asym_goods asym_goods_red asym_goods_norm using goodsasym
+
+
+
+************************ 2. PROCESSED FOOD ************************
+
+
+********2.A.: GENERAL RESULTS********
+
+*Creating the relative weights of goods on level 4 or 5
+//Creating a variable for goods on level 4 and 5
+gen pfood_4_5 = pfood if (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 pfood and period is 1
+total weights if pfood_4_5 == 1 & per == 1
+
+//generating a variable with relative weigths if pfood are on level 4 or 5
+gen rel_w_pfood = pfood_4_5*weights/55.11  if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_pfood
+
+
+//writing the name of the items to a new column if period is 1 and pfood_4_5 == 1
+gen abbr_pfood = COICOP if per == 1 & pfood_4_5 == 1 
+
+//generate an empty variable
+gen betas_pfood_M7 = .
+gen betas_pfood_M1 = .
+
+//one item has been dropped, so we need to go only till 505
+forvalues i = 1(1)505{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_pfood[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_pfood[rownumber] //regress just the particular item
+	quietly replace betas_pfood_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_pfood_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_pfood_x_betas_M7 = rel_w_pfood*betas_pfood_M7
+total rel_pfood_x_betas_M7 //the total effect with interval forecast
+
+gen rel_pfood_x_betas_M1 = rel_w_pfood*betas_pfood_M1
+total rel_pfood_x_betas_M1 //the total effect with interval forecast
+
+
+
+********2.B.: REDUCED ITEMS********
+
+
+*Creating the relative weights of pfood on level 4 or 5
+//Creating a variable for pfood on level 4 and 5
+gen pfood_4_5_red = pfood if (level == 4 | level == 5) & red == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 pfood and period is 1
+total weights if pfood_4_5_red == 1 & per == 1
+
+//generating a variable with relative weigths if pfood are on level 4 or 5
+gen rel_w_pfood_red = pfood_4_5_red*weights/39.36 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_pfood_red
+
+
+//writing the name of the items to a new column if period is 1 and pfood_4_5 == 1
+gen abbr_pfood_red = COICOP if per == 1 & pfood_4_5_red == 1 
+
+//generate two empty variables
+gen betas_pfood_red_M7 = .
+gen betas_pfood_red_M1 = .
+
+
+forvalues i = 1(1)505{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_pfood_red[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_pfood_red[rownumber] //regress just the particular item
+	replace betas_pfood_red_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_pfood_red_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_pfood_x_betas_red_M7 = rel_w_pfood_red*betas_pfood_red_M7
+total rel_pfood_x_betas_red_M7
+
+gen rel_pfood_x_betas_red_M1 = rel_w_pfood_red*betas_pfood_red_M1
+total rel_pfood_x_betas_red_M1
+
+
+
+********2.C.: NORMAL ITEMS********
+
+
+*Creating the relative weights of pfood on level 4 or 5
+//Creating a variable for pfood on level 4 and 5
+gen pfood_4_5_norm = pfood if (level == 4 | level == 5) & norm == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 pfood and period is 1
+total weights if pfood_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if pfood are on level 4 or 5
+gen rel_w_pfood_norm = pfood_4_5_norm*weights/15.75 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_pfood_norm
+
+
+//writing the name of the items to a new column if period is 1 and pfood_4_5 == 1
+gen abbr_pfood_norm = COICOP if per == 1 & pfood_4_5_norm == 1 
+
+//generate two empty variables
+gen betas_pfood_norm_M7 = .
+gen betas_pfood_norm_M1 = .
+
+
+
+forvalues i = 1(1)505{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_pfood_norm[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_pfood_norm[rownumber] //regress just the particular item
+	replace betas_pfood_norm_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_pfood_norm_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_pfood_x_betas_norm_M7 = rel_w_pfood_norm*betas_pfood_norm_M7
+total rel_pfood_x_betas_norm_M7
+
+gen rel_pfood_x_betas_norm_M1 = rel_w_pfood_norm*betas_pfood_norm_M1
+total rel_pfood_x_betas_norm_M1
+
+
+gen asym_pfood = betas_pfood_M7 + betas_pfood_M1
+gen asym_pfood_red = betas_pfood_red_M7 + betas_pfood_red_M1
+gen asym_pfood_norm = betas_pfood_norm_M7 + betas_pfood_norm_M1
+
+//regressions
+
+regress asym_pfood trendinf_M6
+regress asym_pfood trendinf_M3
+regress asym_pfood trendinf_M12
+regress asym_pfood trendinf_jan_M5
+
+regress asym_pfood_red trendinf_M6
+regress asym_pfood_red trendinf_M3
+regress asym_pfood_red trendinf_M12
+regress asym_pfood_red trendinf_jan_M5
+
+regress asym_pfood_norm trendinf_M6
+regress asym_pfood_norm trendinf_M3
+regress asym_pfood_norm trendinf_M12
+regress asym_pfood_norm trendinf_jan_M5
+
+//export the the asymmetry variables
+
+//export excel COICOP asym_pfood asym_pfood_red asym_pfood_norm using pfoodasym
+
+
+
+
+************************ 3. SERVICES ************************
+
+
+************************ 3.A.2.: GENERAL RESULTS WITHOUT TAXFREE ITEMS ************************
+
+*Creating the relative weights of services on level 4 or 5
+//Creating a variable for services on level 4 and 5
+gen service_4_5_notaxfree = service if (level == 4 | level == 5) & correction != 1 & taxfree != 1
+
+//the total of weights in case of level 4 and 5 service and period is 1
+total weights if service_4_5_notaxfree == 1 & per == 1
+
+//generating a variable with relative weigths if service are on level 4 or 5
+gen rel_w_service_notaxfree = service_4_5_notaxfree*weights/131.12 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_service_notaxfree
+
+
+//writing the name of the items to a new column if period is 1 and service_4_5 == 1
+gen abbr_service_notaxfree = COICOP if per == 1 & service_4_5_notaxfree == 1 
+
+//generate an empty variable
+gen betas_service_notaxfree_M7 = .
+gen betas_service_notaxfree_M1 = .
+gen betas_service_taxfree2 = .
+
+
+
+forvalues i = 1(1)505{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_service_notaxfree[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_service_notaxfree[rownumber] //regress just the particular item
+	replace betas_service_notaxfree_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_service_notaxfree_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_service_x_betas_notaxfree_M7 = rel_w_service_notaxfree*betas_service_notaxfree_M7
+total rel_service_x_betas_notaxfree_M7 //the total effect with interval forecast
+
+gen rel_service_x_betas_notaxfree_M1 = rel_w_service_notaxfree*betas_service_notaxfree_M1
+total rel_service_x_betas_notaxfree_M1 //the total effect with interval forecast
+
+
+************************ 3.B.: REDUCED ITEMS ************************
+
+
+*Creating the relative weights of service on level 4 or 5
+//Creating a variable for service on level 4 and 5
+gen service_4_5_red = service if (level == 4 | level == 5) & red == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 service and period is 1
+total weights if service_4_5_red == 1 & per == 1
+
+//generating a variable with relative weigths if service are on level 4 or 5
+gen rel_w_service_red = service_4_5_red*weights/9.7 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_service_red
+
+
+//writing the name of the items to a new column if period is 1 and service_4_5 == 1
+gen abbr_service_red = COICOP if per == 1 & service_4_5_red == 1 
+
+//generate two empty variables
+gen betas_service_red_M7 = .
+gen betas_service_red_M1 = .
+
+
+
+forvalues i = 1(1)505{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_service_red[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_service_red[rownumber] //regress just the particular item
+	replace betas_service_red_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_service_red_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_service_x_betas_red_M7 = rel_w_service_red*betas_service_red_M7
+total rel_service_x_betas_red_M7
+
+gen rel_service_x_betas_red_M1 = rel_w_service_red*betas_service_red_M1
+total rel_service_x_betas_red_M1
+
+
+
+************************ 3.C.: NORMAL ITEMS ************************
+
+
+*Creating the relative weights of service on level 4 or 5
+//Creating a variable for service on level 4 and 5
+gen service_4_5_norm = service if (level == 4 | level == 5) & norm == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 service and period is 1
+total weights if service_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if service are on level 4 or 5
+gen rel_w_service_norm = service_4_5_norm*weights/100.47 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_service_norm
+
+
+//writing the name of the items to a new column if period is 1 and service_4_5 == 1
+gen abbr_service_norm = COICOP if per == 1 & service_4_5_norm == 1 
+
+//generate two empty variables
+gen betas_service_norm_M7 = .
+gen betas_service_norm_M1 = .
+
+
+
+forvalues i = 1(1)505{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_service_norm[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_service_norm[rownumber] //regress just the particular item
+	replace betas_service_norm_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_service_norm_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_service_x_betas_norm_M7 = rel_w_service_norm*betas_service_norm_M7
+total rel_service_x_betas_norm_M7
+
+gen rel_service_x_betas_norm_M1 = rel_w_service_norm*betas_service_norm_M1
+total rel_service_x_betas_norm_M1
+
+
+
+
+************************ 3.D.: HOSPITALITY ************************
+
+
+*Creating the relative weights of service on level 4 or 5
+//Creating a variable for service on level 4 and 5
+gen service_4_5_hospitality = service if (level == 4 | level == 5) & hospitality == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 service and period is 1
+total weights if service_4_5_hospitality == 1 & per == 1
+
+//generating a variable with relative weigths if service are on level 4 or 5
+gen rel_w_service_hospitality = service_4_5_hospitality*weights/20.95 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_service_hospitality
+
+
+//writing the name of the items to a new column if period is 1 and service_4_5 == 1
+gen abbr_service_hospitality = COICOP if per == 1 & service_4_5_hospitality == 1 
+
+//generate two empty variables
+gen betas_service_hospitality_M7 = .
+gen betas_service_hospitality_M1 = .
+
+
+
+forvalues i = 1(1)505{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_service_hospitality[rownumber] { //if the abbr is not empty in this row
+	eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M1_2021 if COICOP == abbr_service_hospitality[rownumber] //regress just the particular item
+	replace betas_service_hospitality_M7 = _b[M7_2020] if _n == rownumber
+	replace betas_service_hospitality_M1 = _b[M1_2021] if _n == rownumber
+	est clear
+	}
+	drop rownumber
+}
+
+gen rel_service_x_betas_hosp_M7 = rel_w_service_hospitality*betas_service_hospitality_M7
+total rel_service_x_betas_hosp_M7
+
+gen rel_service_x_betas_hosp_M1 = rel_w_service_hospitality*betas_service_hospitality_M1
+total rel_service_x_betas_hosp_M1
+
+
+gen asym_service_notaxfree = betas_service_notaxfree_M7 + betas_service_notaxfree_M1
+gen asym_service_red = betas_service_red_M7 + betas_service_red_M1
+gen asym_service_norm = betas_service_norm_M7 + betas_service_norm_M1
+gen asym_service_hospitality = betas_service_hospitality_M7 + betas_service_hospitality_M1
+
+
+//drop the outlier
+drop if COICOP == "Other fees and services " //outlier
+
+//regressions
+regress asym_service_notaxfree trendinf_M6
+regress asym_service_notaxfree trendinf_M3
+regress asym_service_notaxfree trendinf_M12
+regress asym_service_notaxfree trendinf_jan_M5
+
+regress asym_service_red trendinf_M6
+regress asym_service_red trendinf_M3
+regress asym_service_red trendinf_M12
+regress asym_service_red trendinf_jan_M5
+
+regress asym_service_norm trendinf_M6
+regress asym_service_norm trendinf_M3
+regress asym_service_norm trendinf_M12
+regress asym_service_norm trendinf_jan_M5
+
+regress asym_service_hospitality trendinf_M6
+regress asym_service_hospitality trendinf_M3
+regress asym_service_hospitality trendinf_M12
+regress asym_service_hospitality trendinf_jan_M5
+
+//export the the asymmetry variables
+
+//export excel COICOP asym_service_notaxfree asym_service_red asym_service_norm asym_service_hospitality using serviceasym
