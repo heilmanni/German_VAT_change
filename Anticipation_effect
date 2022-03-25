@@ -1,0 +1,999 @@
+/*This document is for estimating the VAT effect in time: testing anticipation
+and longer lasting effect of it; testing the connection between
+trendinflation and longer lasting effect*/
+
+
+clear
+ 
+*Import the cleaned data (Final.xlsx)
+import excel "", sheet("Munka1") firstrow
+
+*Change the format of the data by creating new ones and dropping old ones
+gen weights = real(Weightinginpermill)
+drop Weightinginpermill
+
+forvalues i = 1(1)74 {
+gen Per`i'  = real(TIME`i')
+drop TIME`i'
+}
+
+*Reshaping data from wide to long for calculations
+reshape long Per, i( COICOP ) j(per)
+rename Per price
+rename Services service
+
+*Generate new variables for the months of VAT change
+//2020M7 introducing new VAT rates
+gen M7_2020 = 1 if per == 67
+replace M7_2020 = 0 if missing(M7_2020)
+
+//2021M1: set back to the previous VAT
+gen M1_2021 = 1 if per == 73
+replace M1_2021 = 0 if missing(M1_2021)
+
+
+*Generate new variables
+gen M6_2020 = 1 if per == 66
+replace M6_2020 = 0 if missing(M6_2020)
+gen M8_2020 = 1 if per == 68
+replace M8_2020 = 0 if missing(M8_2020)
+gen M9_2020 = 1 if per == 69
+replace M9_2020 = 0 if missing(M9_2020)
+gen M10_2020 = 1 if per == 70
+replace M10_2020 = 0 if missing(M10_2020)
+gen M11_2020 = 1 if per == 71
+replace M11_2020 = 0 if missing(M11_2020)
+gen M12_2020 = 1 if per == 72
+replace M12_2020 = 0 if missing(M12_2020)
+gen M2_2021 = 1 if per == 74
+replace M2_2021 = 0 if missing(M2_2021)
+
+
+
+*Creating variables for each months
+gen time = mod(per,12)
+replace time = 12 if time == 0
+
+gen jan = 1 if time == 1
+replace jan = 0 if missing(jan)
+gen feb = 1 if time == 2
+replace feb = 0 if missing(feb)
+gen mar = 1 if time == 3
+replace mar = 0 if missing(mar)
+gen apr = 1 if time == 4
+replace apr = 0 if missing(apr)
+gen may = 1 if time == 5
+replace may = 0 if missing(may)
+gen jun = 1 if time == 6
+replace jun = 0 if missing(jun)
+gen jul = 1 if time == 7
+replace jul = 0 if missing(jul)
+gen aug = 1 if time == 8
+replace aug = 0 if missing(aug)
+gen sep = 1 if time == 9
+replace sep = 0 if missing(sep)
+gen oct = 1 if time == 10
+replace oct = 0 if missing(oct)
+gen nov = 1 if time == 11
+replace nov = 0 if missing(nov)
+gen dec = 1 if time == 12
+replace dec = 0 if missing(dec)
+
+
+*length of the database (number of different items):
+count if per == 1 //506
+
+total weights if level == 4 & per == 1 //this is 1000
+total weights if (level == 4 | level == 5) & per == 1 & (normal == 1 | reduced == 1 | taxfree == 1 | hospitality  == 1) & correction != 1 //this is 1000.12 due to level 5 items whose value are rounded
+
+
+//to set timeseries
+generate time2 = _n
+tsset time2
+
+
+//generating trendinflation data
+gen trendinf_M6 = .
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1
+	quietly replace trendinf_M6 = (price[rownumber+60] + price[rownumber+61] + price[rownumber+62] + price[rownumber+63] + price[rownumber+64] + price[rownumber+65])/6 if _n == rownumber
+	drop rownumber
+}
+
+
+
+************************ 1. NON-ENERGY INDUSTRIAL GOODS ************************
+
+
+********1.A.: GENERAL RESULTS********
+
+*Creating the relative weights of goods on level 4 or 5
+//Creating a variable for goods on level 4 and 5
+gen goods_4_5 = goods if (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if goods_4_5 == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_goods = goods_4_5*weights/217.16 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_goods
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_goods = COICOP if per == 1 & goods_4_5 == 1 
+
+
+//generate dummies for betas
+gen betas_goods_M7 = .
+gen betas_goods_M8 = .
+gen betas_goods_M12 = .
+gen betas_goods_M1 = .
+gen betas_goods_M2 = .
+
+//generate vars for the p-values
+gen p_goods_M7 = .
+gen p_goods_M8 = .
+gen p_goods_M12 = .
+gen p_goods_M1 = .
+gen p_goods_M2 = .
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_goods[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_goods[rownumber], nocon //regress just the particular item
+	quietly replace betas_goods_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_goods_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_goods_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_goods_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_goods_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_goods_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by the p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_goods_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_goods_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_goods_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_goods_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_goods_x_betas_M7 = rel_w_goods*betas_goods_M7
+total rel_goods_x_betas_M7 //the total effect
+gen rel_goods_x_betas_M8 = rel_w_goods*betas_goods_M8
+total rel_goods_x_betas_M8 //the total effect
+gen rel_goods_x_betas_M12 = rel_w_goods*betas_goods_M12
+total rel_goods_x_betas_M12 //the total effect
+gen rel_goods_x_betas_M1 = rel_w_goods*betas_goods_M1
+total rel_goods_x_betas_M1 //the total effect
+gen rel_goods_x_betas_M2 = rel_w_goods*betas_goods_M2
+total rel_goods_x_betas_M2 //the total effect
+
+
+//how many times are the betas significant?
+count if p_goods_M7 != . //all
+count if p_goods_M7 != . & p_goods_M7 < 0.05 
+count if p_goods_M8 != . //all
+count if p_goods_M8 != . & p_goods_M8 < 0.05 
+count if p_goods_M12 != . //all
+count if p_goods_M12 != . & p_goods_M12 < 0.05 
+count if p_goods_M1 != . //all
+count if p_goods_M1 != . & p_goods_M1 < 0.05 
+count if p_goods_M2 != . //all
+count if p_goods_M2 != . & p_goods_M2 < 0.05 
+
+
+//outliers for M6
+gen outlier_goods = 1 if COICOP == "Audio CD or audio book"
+replace outlier_goods = 1 if COICOP == "Binding services and E-book downloads"
+replace outlier_goods = 1 if COICOP == "Fiction books"
+replace outlier_goods = 1 if COICOP == "Games and hobbies"
+replace outlier_goods = 1 if COICOP == "Garments for infants  0 to 2 years  and children  3 to 13 years "
+replace outlier_goods = 1 if COICOP == "Garments for men"
+replace outlier_goods = 1 if COICOP == "Garments for women"
+replace outlier_goods = 1 if COICOP == "Make-up"
+replace outlier_goods = 1 if COICOP == "Movie on DVD or blu-ray disc"
+replace outlier_goods = 1 if COICOP == "Other articles of clothing"
+replace outlier_goods = 1 if COICOP == "Portable sound and vision devices"
+
+
+//Trendinflation
+total rel_w_goods if trendinf_M6 > 0 & outlier_goods != 1 //weight
+total rel_w_goods if trendinf_M6 < 0 & outlier_goods != 1 //weight
+
+gen rel_goods_x_betas_M7_poz = rel_w_goods*betas_goods_M7/0.5359182 if trendinf_M6 > 0 & outlier_goods != 1
+total rel_goods_x_betas_M7_poz //the total effect
+gen rel_goods_x_betas_M7_neg = rel_w_goods*betas_goods_M7/0.2705379 if trendinf_M6 < 0 & outlier_goods != 1
+total rel_goods_x_betas_M7_neg //the total effect
+
+gen rel_goods_x_betas_M8_poz = rel_w_goods*betas_goods_M8/0.5359182 if trendinf_M6 > 0 & outlier_goods != 1
+total rel_goods_x_betas_M8_poz //the total effect
+gen rel_goods_x_betas_M8_neg = rel_w_goods*betas_goods_M8/0.2705379 if trendinf_M6 < 0 & outlier_goods != 1
+total rel_goods_x_betas_M8_neg //the total effect
+
+gen rel_goods_x_betas_M12_poz = rel_w_goods*betas_goods_M12/0.5359182 if trendinf_M6 > 0 & outlier_goods != 1
+total rel_goods_x_betas_M12_poz //the total effect
+gen rel_goods_x_betas_M12_neg = rel_w_goods*betas_goods_M12/0.2705379 if trendinf_M6 < 0 & outlier_goods != 1
+total rel_goods_x_betas_M12_neg //the total effect
+
+gen rel_goods_x_betas_M1_poz = rel_w_goods*betas_goods_M1/0.5359182 if trendinf_M6 > 0 & outlier_goods != 1
+total rel_goods_x_betas_M1_poz //the total effect
+gen rel_goods_x_betas_M1_neg = rel_w_goods*betas_goods_M1/0.2705379 if trendinf_M6 < 0 & outlier_goods != 1
+total rel_goods_x_betas_M1_neg //the total effect
+
+gen rel_goods_x_betas_M2_poz = rel_w_goods*betas_goods_M2/0.5359182 if trendinf_M6 > 0 & outlier_goods != 1
+total rel_goods_x_betas_M2_poz //the total effect
+gen rel_goods_x_betas_M2_neg = rel_w_goods*betas_goods_M2/0.2705379 if trendinf_M6 < 0 & outlier_goods != 1
+total rel_goods_x_betas_M2_neg //the total effect
+
+
+
+
+********1.B.: REDUCED ITEMS********
+
+*Creating the relative weights of goods on level 4 or 5
+//Creating a variable for goods on level 4 and 5
+gen goods_4_5_red = goods if (level == 4 | level == 5) & red == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if goods_4_5_red == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_goods_red = goods_4_5_red*weights/18.75 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_goods_red
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_goods_red = COICOP if per == 1 & goods_4_5_red == 1 
+
+//generate dummies for the betas
+gen betas_goods_red_M7 = .
+gen betas_goods_red_M8 = .
+gen betas_goods_red_M12 = .
+gen betas_goods_red_M1 = .
+gen betas_goods_red_M2 = .
+
+//generate vars for the p-values
+gen p_goods_red_M7 = .
+gen p_goods_red_M8 = .
+gen p_goods_red_M12 = .
+gen p_goods_red_M1 = .
+gen p_goods_red_M2 = .
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_goods_red[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_goods_red[rownumber], nocon //regress just the particular item
+	quietly replace betas_goods_red_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_goods_red_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_goods_red_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_goods_red_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_goods_red_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_goods_red_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_goods_red_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_goods_red_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_goods_red_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_goods_red_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_goods_red_x_betas_M7 = rel_w_goods_red*betas_goods_red_M7
+total rel_goods_red_x_betas_M7 //the total effect
+gen rel_goods_red_x_betas_M8 = rel_w_goods_red*betas_goods_red_M8
+total rel_goods_red_x_betas_M8 //the total effect
+gen rel_goods_red_x_betas_M12 = rel_w_goods_red*betas_goods_red_M12
+total rel_goods_red_x_betas_M12 //the total effect
+gen rel_goods_red_x_betas_M1 = rel_w_goods_red*betas_goods_red_M1
+total rel_goods_red_x_betas_M1 //the total effect
+gen rel_goods_red_x_betas_M2 = rel_w_goods_red*betas_goods_red_M2
+total rel_goods_red_x_betas_M2 //the total effect
+
+
+//how many times are the betas significant?
+count if p_goods_red_M7 != . //all
+count if p_goods_red_M7 != . & p_goods_red_M7 < 0.05 
+count if p_goods_red_M8 != . //all
+count if p_goods_red_M8 != . & p_goods_red_M8 < 0.05 
+count if p_goods_red_M12 != . //all
+count if p_goods_red_M12 != . & p_goods_red_M12 < 0.05 
+count if p_goods_red_M1 != . //all
+count if p_goods_red_M1 != . & p_goods_red_M1 < 0.05 
+count if p_goods_red_M2 != . //all
+count if p_goods_red_M2 != . & p_goods_red_M2 < 0.05 
+
+
+********1.C.: NORMAL ITEMS********
+
+*Creating the relative weights of goods on level 4 or 5
+//Creating a variable for goods on level 4 and 5
+gen goods_4_5_norm = goods if (level == 4 | level == 5) & norm == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if goods_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_goods_norm = goods_4_5_norm*weights/198.41 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_goods_norm
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_goods_norm = COICOP if per == 1 & goods_4_5_norm == 1 
+
+
+//generate dummies for the betas
+gen betas_goods_norm_M7 = .
+gen betas_goods_norm_M8 = .
+gen betas_goods_norm_M12 = .
+gen betas_goods_norm_M1 = .
+gen betas_goods_norm_M2 = .
+
+
+//generate vars for the p-values
+gen p_goods_norm_M7 = .
+gen p_goods_norm_M8 = .
+gen p_goods_norm_M12 = .
+gen p_goods_norm_M1 = .
+gen p_goods_norm_M2 = .
+
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_goods_norm[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_goods_norm[rownumber], nocon //regress just the particular item
+	quietly replace betas_goods_norm_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_goods_norm_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_goods_norm_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_goods_norm_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_goods_norm_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_goods_norm_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_goods_norm_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_goods_norm_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_goods_norm_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_goods_norm_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_goods_norm_x_betas_M7 = rel_w_goods_norm*betas_goods_norm_M7
+total rel_goods_norm_x_betas_M7 //the total effect
+gen rel_goods_norm_x_betas_M8 = rel_w_goods_norm*betas_goods_norm_M8
+total rel_goods_norm_x_betas_M8 //the total effect
+gen rel_goods_norm_x_betas_M12 = rel_w_goods_norm*betas_goods_norm_M12
+total rel_goods_norm_x_betas_M12 //the total effect
+gen rel_goods_norm_x_betas_M1 = rel_w_goods_norm*betas_goods_norm_M1
+total rel_goods_norm_x_betas_M1 //the total effect
+gen rel_goods_norm_x_betas_M2 = rel_w_goods_norm*betas_goods_norm_M2
+total rel_goods_norm_x_betas_M2 //the total effect
+
+
+
+//how many times are the betas significant?
+count if p_goods_norm_M7 != . //all
+count if p_goods_norm_M7 != . & p_goods_norm_M7 < 0.05 
+count if p_goods_norm_M8 != . //all
+count if p_goods_norm_M8 != . & p_goods_norm_M8 < 0.05 
+count if p_goods_norm_M12 != . //all
+count if p_goods_norm_M12 != . & p_goods_norm_M12 < 0.05 
+count if p_goods_norm_M1 != . //all
+count if p_goods_norm_M1 != . & p_goods_norm_M1 < 0.05 
+count if p_goods_norm_M2 != . //all
+count if p_goods_norm_M2 != . & p_goods_norm_M2 < 0.05
+
+
+
+
+****************************** 2. PROCESSED FOOD ******************************
+
+
+***********2.A.: GENERAL RESULTS********
+
+*Creating the relative weights of pfood on level 4 or 5
+//Creating a variable for pfood on level 4 and 5
+gen pfood_4_5 = pfood if (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 pfood and period is 1
+total weights if pfood_4_5 == 1 & per == 1
+
+//generating a variable with relative weigths if pfood are on level 4 or 5
+gen rel_w_pfood = pfood_4_5*weights/55.11 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_pfood
+
+
+//writing the name of the items to a new column if period is 1 and pfood_4_5 == 1
+gen abbr_pfood = COICOP if per == 1 & pfood_4_5 == 1 
+
+
+//generate dummies for betas
+gen betas_pfood_M7 = .
+gen betas_pfood_M8 = .
+gen betas_pfood_M12 = .
+gen betas_pfood_M1 = .
+gen betas_pfood_M2 = .
+
+//generate vars for the p-values
+gen p_pfood_M7 = .
+gen p_pfood_M8 = .
+gen p_pfood_M12 = .
+gen p_pfood_M1 = .
+gen p_pfood_M2 = .
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_pfood[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_pfood[rownumber], nocon //regress just the particular item
+	quietly replace betas_pfood_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_pfood_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_pfood_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_pfood_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_pfood_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_pfood_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_pfood_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_pfood_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_pfood_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_pfood_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_pfood_x_betas_M7 = rel_w_pfood*betas_pfood_M7
+total rel_pfood_x_betas_M7 //the total effect
+gen rel_pfood_x_betas_M8 = rel_w_pfood*betas_pfood_M8
+total rel_pfood_x_betas_M8 //the total effect
+gen rel_pfood_x_betas_M12 = rel_w_pfood*betas_pfood_M12
+total rel_pfood_x_betas_M12 //the total effect
+gen rel_pfood_x_betas_M1 = rel_w_pfood*betas_pfood_M1
+total rel_pfood_x_betas_M1 //the total effect
+gen rel_pfood_x_betas_M2 = rel_w_pfood*betas_pfood_M2
+total rel_pfood_x_betas_M2 //the total effect
+
+
+//how many times are the betas significant?
+count if p_pfood_M7 != . //all
+count if p_pfood_M7 != . & p_pfood_M7 < 0.05 
+count if p_pfood_M8 != . //all
+count if p_pfood_M8 != . & p_pfood_M8 < 0.05 
+count if p_pfood_M12 != . //all
+count if p_pfood_M12 != . & p_pfood_M12 < 0.05 
+count if p_pfood_M1 != . //all
+count if p_pfood_M1 != . & p_pfood_M1 < 0.05 
+count if p_pfood_M2 != . //all
+count if p_pfood_M2 != . & p_pfood_M2 < 0.05 
+
+
+//outliers for M6
+gen outlier_pfood = 1 if COICOP == "Cocoa-based spread "
+replace outlier_pfood = 1 if COICOP == "Confectionery products"
+replace outlier_pfood = 1 if COICOP == "Honey"
+replace outlier_pfood = 1 if COICOP == "Margarine and other vegetable fats"
+replace outlier_pfood = 1 if COICOP == "Olive oil"
+replace outlier_pfood = 1 if COICOP == "Pasta products and couscous"
+replace outlier_pfood = 1 if COICOP == "Sauce mix, sauce thickener or the like"
+replace outlier_pfood = 1 if COICOP == "Yoghurt"
+
+//Trendinflation
+total rel_w_pfood if trendinf_M6 > 0 & outlier_pfood != 1 //weights
+total rel_w_pfood if trendinf_M6 < 0 & outlier_pfood != 1 //weights
+
+gen rel_pfood_x_betas_M7_poz = rel_w_pfood*betas_pfood_M7/0.7541281 if trendinf_M6 > 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M7_poz //the total effect
+gen rel_pfood_x_betas_M7_neg = rel_w_pfood*betas_pfood_M7/0.1117765 if trendinf_M6 < 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M7_neg //the total effect
+
+gen rel_pfood_x_betas_M8_poz = rel_w_pfood*betas_pfood_M8/0.7541281 if trendinf_M6 > 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M8_poz //the total effect
+gen rel_pfood_x_betas_M8_neg = rel_w_pfood*betas_pfood_M8/0.1117765 if trendinf_M6 < 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M8_neg //the total effect
+
+gen rel_pfood_x_betas_M12_poz = rel_w_pfood*betas_pfood_M12/0.7541281 if trendinf_M6 > 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M12_poz //the total effect
+gen rel_pfood_x_betas_M12_neg = rel_w_pfood*betas_pfood_M12/0.1117765 if trendinf_M6 < 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M12_neg //the total effect
+
+gen rel_pfood_x_betas_M1_poz = rel_w_pfood*betas_pfood_M1/0.7541281 if trendinf_M6 > 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M1_poz //the total effect
+gen rel_pfood_x_betas_M1_neg = rel_w_pfood*betas_pfood_M1/0.1117765 if trendinf_M6 < 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M1_neg //the total effect
+
+gen rel_pfood_x_betas_M2_poz = rel_w_pfood*betas_pfood_M2/0.7541281 if trendinf_M6 > 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M2_poz //the total effect
+gen rel_pfood_x_betas_M2_neg = rel_w_pfood*betas_pfood_M2/0.1117765 if trendinf_M6 < 0 & outlier_pfood != 1
+total rel_pfood_x_betas_M2_neg //the total effect
+
+
+
+********2.B.: REDUCED ITEMS********
+
+*Creating the relative weights of pfood on level 4 or 5
+//Creating a variable for pfood on level 4 and 5
+gen pfood_4_5_red = pfood if (level == 4 | level == 5) & red == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 pfood and period is 1
+total weights if pfood_4_5_red == 1 & per == 1
+
+//generating a variable with relative weigths if pfood are on level 4 or 5
+gen rel_w_pfood_red = pfood_4_5_red*weights/39.36 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_pfood_red
+
+
+//writing the name of the items to a new column if period is 1 and pfood_4_5 == 1
+gen abbr_pfood_red = COICOP if per == 1 & pfood_4_5_red == 1 
+
+//generate dummies for the betas
+gen betas_pfood_red_M7 = .
+gen betas_pfood_red_M8 = .
+gen betas_pfood_red_M12 = .
+gen betas_pfood_red_M1 = .
+gen betas_pfood_red_M2 = .
+
+//generate vars for the p-values
+gen p_pfood_red_M7 = .
+gen p_pfood_red_M8 = .
+gen p_pfood_red_M12 = .
+gen p_pfood_red_M1 = .
+gen p_pfood_red_M2 = .
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_pfood_red[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_pfood_red[rownumber], nocon //regress just the particular item
+	quietly replace betas_pfood_red_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_pfood_red_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_pfood_red_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_pfood_red_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_pfood_red_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_pfood_red_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_pfood_red_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_pfood_red_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_pfood_red_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_pfood_red_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_pfood_red_x_betas_M7 = rel_w_pfood_red*betas_pfood_red_M7
+total rel_pfood_red_x_betas_M7 //the total effect
+gen rel_pfood_red_x_betas_M8 = rel_w_pfood_red*betas_pfood_red_M8
+total rel_pfood_red_x_betas_M8 //the total effect
+gen rel_pfood_red_x_betas_M12 = rel_w_pfood_red*betas_pfood_red_M12
+total rel_pfood_red_x_betas_M12 //the total effect
+gen rel_pfood_red_x_betas_M1 = rel_w_pfood_red*betas_pfood_red_M1
+total rel_pfood_red_x_betas_M1 //the total effect
+gen rel_pfood_red_x_betas_M2 = rel_w_pfood_red*betas_pfood_red_M2
+total rel_pfood_red_x_betas_M2 //the total effect
+
+
+//how many times are the betas significant?
+count if p_pfood_red_M7 != . //all
+count if p_pfood_red_M7 != . & p_pfood_red_M7 < 0.05 
+count if p_pfood_red_M8 != . //all
+count if p_pfood_red_M8 != . & p_pfood_red_M8 < 0.05 
+count if p_pfood_red_M12 != . //all
+count if p_pfood_red_M12 != . & p_pfood_red_M12 < 0.05 
+count if p_pfood_red_M1 != . //all
+count if p_pfood_red_M1 != . & p_pfood_red_M1 < 0.05 
+count if p_pfood_red_M2 != . //all
+count if p_pfood_red_M2 != . & p_pfood_red_M2 < 0.05 
+
+
+********2.C.: NORMAL ITEMS********
+
+*Creating the relative weights of pfood on level 4 or 5
+//Creating a variable for pfood on level 4 and 5
+gen pfood_4_5_norm = pfood if (level == 4 | level == 5) & norm == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 pfood and period is 1
+total weights if pfood_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if pfood are on level 4 or 5
+gen rel_w_pfood_norm = pfood_4_5_norm*weights/15.75 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_pfood_norm
+
+
+//writing the name of the items to a new column if period is 1 and pfood_4_5 == 1
+gen abbr_pfood_norm = COICOP if per == 1 & pfood_4_5_norm == 1 
+
+
+//generate dummies for the betas
+gen betas_pfood_norm_M7 = .
+gen betas_pfood_norm_M8 = .
+gen betas_pfood_norm_M12 = .
+gen betas_pfood_norm_M1 = .
+gen betas_pfood_norm_M2 = .
+
+
+//generate vars for the p-values
+gen p_pfood_norm_M7 = .
+gen p_pfood_norm_M8 = .
+gen p_pfood_norm_M12 = .
+gen p_pfood_norm_M1 = .
+gen p_pfood_norm_M2 = .
+
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_pfood_norm[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_pfood_norm[rownumber], nocon //regress just the particular item
+	quietly replace betas_pfood_norm_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_pfood_norm_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_pfood_norm_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_pfood_norm_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_pfood_norm_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] // t stat
+	quietly replace p_pfood_norm_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_pfood_norm_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_pfood_norm_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_pfood_norm_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_pfood_norm_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_pfood_norm_x_betas_M7 = rel_w_pfood_norm*betas_pfood_norm_M7
+total rel_pfood_norm_x_betas_M7 //the total effect
+gen rel_pfood_norm_x_betas_M8 = rel_w_pfood_norm*betas_pfood_norm_M8
+total rel_pfood_norm_x_betas_M8 //the total effect
+gen rel_pfood_norm_x_betas_M12 = rel_w_pfood_norm*betas_pfood_norm_M12
+total rel_pfood_norm_x_betas_M12 //the total effect
+gen rel_pfood_norm_x_betas_M1 = rel_w_pfood_norm*betas_pfood_norm_M1
+total rel_pfood_norm_x_betas_M1 //the total effect
+gen rel_pfood_norm_x_betas_M2 = rel_w_pfood_norm*betas_pfood_norm_M2
+total rel_pfood_norm_x_betas_M2 //the total effect
+
+
+
+//how many times are the betas significant?
+count if p_pfood_norm_M7 != . //all
+count if p_pfood_norm_M7 != . & p_pfood_norm_M7 < 0.05 
+count if p_pfood_norm_M8 != . //all
+count if p_pfood_norm_M8 != . & p_pfood_norm_M8 < 0.05 
+count if p_pfood_norm_M12 != . //all
+count if p_pfood_norm_M12 != . & p_pfood_norm_M12 < 0.05 
+count if p_pfood_norm_M1 != . //all
+count if p_pfood_norm_M1 != . & p_pfood_norm_M1 < 0.05 
+count if p_pfood_norm_M2 != . //all
+count if p_pfood_norm_M2 != . & p_pfood_norm_M2 < 0.05
+
+
+
+************************ 3. SERVICES ************************
+
+
+************************ 3.A: GENERAL RESULTS WITHOUT TAXFREE ITEMS ************************
+
+*Creating the relative weights of services on level 4 or 5
+//Creating a variable for services on level 4 and 5
+gen service_4_5_notaxfree = service if (level == 4 | level == 5) & correction != 1 & taxfree != 1
+
+//the total of weights in case of level 4 and 5 service and period is 1
+total weights if service_4_5_notaxfree == 1 & per == 1
+
+//generating a variable with relative weigths if service are on level 4 or 5
+gen rel_w_service_notaxfree = service_4_5_notaxfree*weights/131.12 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_service_notaxfree
+
+
+//writing the name of the items to a new column if period is 1 and service_4_5 == 1
+gen abbr_service_notaxfree = COICOP if per == 1 & service_4_5_notaxfree == 1 
+
+//generate dummies for the betas
+gen betas_service_notaxfree_M7 = .
+gen betas_service_notaxfree_M8 = .
+gen betas_service_notaxfree_M12 = .
+gen betas_service_notaxfree_M1 = .
+gen betas_service_notaxfree_M2 = .
+
+
+//generate vars for the p-values
+gen p_service_notaxfree_M7 = .
+gen p_service_notaxfree_M8 = .
+gen p_service_notaxfree_M12 = .
+gen p_service_notaxfree_M1 = .
+gen p_service_notaxfree_M2 = .
+
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_service_notaxfree[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_service_notaxfree[rownumber], nocon //regress just the particular item
+	quietly replace betas_service_notaxfree_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_service_notaxfree_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_service_notaxfree_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_service_notaxfree_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_service_notaxfree_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020]
+	quietly replace p_service_notaxfree_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_service_notaxfree_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_service_notaxfree_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_service_notaxfree_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_service_notaxfree_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_service_notaxfree_x_betas_M7 = rel_w_service_notaxfree*betas_service_notaxfree_M7
+total rel_service_notaxfree_x_betas_M7 //the total effect
+gen rel_service_notaxfree_x_betas_M8 = rel_w_service_notaxfree*betas_service_notaxfree_M8
+total rel_service_notaxfree_x_betas_M8 //the total effect
+gen rel_service_notaxfree_x_betasM12 = rel_w_service_notaxfree*betas_service_notaxfree_M12
+total rel_service_notaxfree_x_betasM12 //the total effect
+gen rel_service_notaxfree_x_betas_M1 = rel_w_service_notaxfree*betas_service_notaxfree_M1
+total rel_service_notaxfree_x_betas_M1 //the total effect
+gen rel_service_notaxfree_x_betas_M2 = rel_w_service_notaxfree*betas_service_notaxfree_M2
+total rel_service_notaxfree_x_betas_M2 //the total effect
+
+
+
+//how many times are the betas significant?
+count if p_service_notaxfree_M7 != . //all
+count if p_service_notaxfree_M7 != . & p_service_notaxfree_M7 < 0.05 
+count if p_service_notaxfree_M8 != . //all
+count if p_service_notaxfree_M8 != . & p_service_notaxfree_M8 < 0.05 
+count if p_service_notaxfree_M12 != . //all
+count if p_service_notaxfree_M12 != . & p_service_notaxfree_M12 < 0.05 
+count if p_service_notaxfree_M1 != . //all
+count if p_service_notaxfree_M1 != . & p_service_notaxfree_M1 < 0.05 
+count if p_service_notaxfree_M2 != . //all
+count if p_service_notaxfree_M2 != . & p_service_notaxfree_M2 < 0.05
+
+
+//outliers for M6
+gen outlier_service = 1 if COICOP == "Legal services and accountancy "
+replace outlier_service = 1 if COICOP == "Other fees and services "
+replace outlier_service = 1 if COICOP == "Photographic services"
+replace outlier_service = 1 if COICOP == "Recreational and sporting services - Attendance"
+replace outlier_service = 1 if COICOP == "Television and radio licence fees, subscriptions"
+
+//Trendinflation
+total rel_w_service_notaxfree if trendinf_M6 > 0 & outlier_service != 1 //weights
+total rel_w_service_notaxfree if trendinf_M6 < 0 & outlier_service != 1 //weights
+
+gen rel_serv_notaxfree_betasM7_poz = rel_w_service_notaxfree*betas_service_notaxfree_M7/0.6957749 if trendinf_M6 > 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM7_poz //the total effect
+gen rel_serv_notaxfree_betasM7_neg = rel_w_service_notaxfree*betas_service_notaxfree_M7/0.1966901 if trendinf_M6 < 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM7_neg //the total effect
+
+gen rel_serv_notaxfree_betasM8_poz = rel_w_service_notaxfree*betas_service_notaxfree_M8/0.6957749 if trendinf_M6 > 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM8_poz //the total effect
+gen rel_serv_notaxfree_betasM8_neg = rel_w_service_notaxfree*betas_service_notaxfree_M8/0.1966901 if trendinf_M6 < 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM8_neg //the total effect
+
+gen rel_serv_notaxfree_betasM12_poz = rel_w_service_notaxfree*betas_service_notaxfree_M12/0.6957749 if trendinf_M6 > 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM12_poz //the total effect
+gen rel_serv_notaxfree_betasM12_neg = rel_w_service_notaxfree*betas_service_notaxfree_M12/0.1966901 if trendinf_M6 < 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM12_neg //the total effect
+
+gen rel_serv_notaxfree_betasM1_poz = rel_w_service_notaxfree*betas_service_notaxfree_M1/0.6957749 if trendinf_M6 > 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM1_poz //the total effect
+gen rel_serv_notaxfree_betasM1_neg = rel_w_service_notaxfree*betas_service_notaxfree_M1/0.1966901 if trendinf_M6 < 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM1_neg //the total effect
+
+gen rel_serv_notaxfree_betasM2_poz = rel_w_service_notaxfree*betas_service_notaxfree_M2/0.6957749 if trendinf_M6 > 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM2_poz //the total effect
+gen rel_serv_notaxfree_betasM2_neg = rel_w_service_notaxfree*betas_service_notaxfree_M2/0.1966901 if trendinf_M6 < 0 & outlier_service != 1
+total rel_serv_notaxfree_betasM2_neg //the total effect
+
+
+************************ 3.C.: NORMAL ITEMS ************************
+
+
+*Creating the relative weights of service on level 4 or 5
+//Creating a variable for service on level 4 and 5
+gen service_4_5_norm = service if (level == 4 | level == 5) & norm == 1 & correction != 1
+
+//the total of weights in case of level 4 and 5 service and period is 1
+total weights if service_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if service are on level 4 or 5
+gen rel_w_service_norm = service_4_5_norm*weights/100.47 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_service_norm
+
+
+//writing the name of the items to a new column if period is 1 and service_4_5 == 1
+gen abbr_service_norm = COICOP if per == 1 & service_4_5_norm == 1 
+
+
+//generate dummies for the betas
+gen betas_service_norm_M7 = .
+gen betas_service_norm_M8 = .
+gen betas_service_norm_M12 = .
+gen betas_service_norm_M1 = .
+gen betas_service_norm_M2 = .
+
+
+//generate vars for the p-values
+gen p_service_norm_M7 = .
+gen p_service_norm_M8 = .
+gen p_service_norm_M12 = .
+gen p_service_norm_M1 = .
+gen p_service_norm_M2 = .
+
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_service_norm[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_service_norm[rownumber], nocon //regress just the particular item
+	quietly replace betas_service_norm_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_service_norm_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_service_norm_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_service_norm_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_service_norm_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] // t stat
+	quietly replace p_service_norm_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber // p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_service_norm_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_service_norm_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_service_norm_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_service_norm_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_service_norm_x_betas_M7 = rel_w_service_norm*betas_service_norm_M7
+total rel_service_norm_x_betas_M7 //the total effect
+gen rel_service_norm_x_betas_M8 = rel_w_service_norm*betas_service_norm_M8
+total rel_service_norm_x_betas_M8 //the total effect
+gen rel_service_norm_x_betas_M12 = rel_w_service_norm*betas_service_norm_M12
+total rel_service_norm_x_betas_M12 //the total effect
+gen rel_service_norm_x_betas_M1 = rel_w_service_norm*betas_service_norm_M1
+total rel_service_norm_x_betas_M1 //the total effect
+gen rel_service_norm_x_betas_M2 = rel_w_service_norm*betas_service_norm_M2
+total rel_service_norm_x_betas_M2 //the total effect
+
+
+
+//how many times are the betas significant?
+count if p_service_norm_M7 != . //all
+count if p_service_norm_M7 != . & p_service_norm_M7 < 0.05 
+count if p_service_norm_M8 != . //all
+count if p_service_norm_M8 != . & p_service_norm_M8 < 0.05 
+count if p_service_norm_M12 != . //all
+count if p_service_norm_M12 != . & p_service_norm_M12 < 0.05 
+count if p_service_norm_M1 != . //all
+count if p_service_norm_M1 != . & p_service_norm_M1 < 0.05 
+count if p_service_norm_M2 != . //all
+count if p_service_norm_M2 != . & p_service_norm_M2 < 0.05
+
+
+
+
+
+
+******************* Some additional tests **************************************
+
+
+
+//generating empty variables for our interest
+gen betas_goods_M6_full = .
+gen betas_goods_M7_full = .
+gen betas_goods_M8_full = .
+gen betas_goods_M9_full = .
+gen betas_goods_M10_full = .
+gen betas_goods_M11_full = .
+gen betas_goods_M12_full = .
+gen betas_goods_M1_full = .
+gen betas_goods_M2_full = .
+
+
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_goods[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov M6_2020 M7_2020 M8_2020 M9_2020 M10_2020 M11_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_goods[rownumber], nocon //regress just the particular item
+	quietly replace betas_goods_M6_full = _b[M6_2020] if _n == rownumber
+	quietly replace betas_goods_M7_full = _b[M7_2020] if _n == rownumber
+	quietly replace betas_goods_M8_full = _b[M8_2020] if _n == rownumber
+	quietly replace betas_goods_M9_full = _b[M9_2020] if _n == rownumber
+	quietly replace betas_goods_M10_full = _b[M10_2020] if _n == rownumber
+	quietly replace betas_goods_M11_full = _b[M11_2020] if _n == rownumber
+	quietly replace betas_goods_M12_full = _b[M12_2020] if _n == rownumber
+	quietly replace betas_goods_M1_full = _b[M1_2021] if _n == rownumber
+	quietly replace betas_goods_M2_full = _b[M2_2021] if _n == rownumber
+	quietly est clear
+	}
+	drop rownumber
+}
+
+gen rel_goods_x_betas_M6_full = rel_w_goods*betas_goods_M6_full
+total rel_goods_x_betas_M6_full //the total effect
+gen rel_goods_x_betas_M7_full = rel_w_goods*betas_goods_M7_full
+total rel_goods_x_betas_M7_full //the total effect
+gen rel_goods_x_betas_M8_full = rel_w_goods*betas_goods_M8_full
+total rel_goods_x_betas_M8_full //the total effect
+gen rel_goods_x_betas_M9_full = rel_w_goods*betas_goods_M9_full
+total rel_goods_x_betas_M9_full //the total effect
+gen rel_goods_x_betas_M10_full = rel_w_goods*betas_goods_M10_full
+total rel_goods_x_betas_M10_full //the total effect
+gen rel_goods_x_betas_M11_full = rel_w_goods*betas_goods_M11_full
+total rel_goods_x_betas_M11_full //the total effect
+gen rel_goods_x_betas_M12_full = rel_w_goods*betas_goods_M12_full
+total rel_goods_x_betas_M12_full //the total effect
+gen rel_goods_x_betas_M1_full = rel_w_goods*betas_goods_M1_full
+total rel_goods_x_betas_M1_full //the total effect
+gen rel_goods_x_betas_M2_full = rel_w_goods*betas_goods_M2_full
+total rel_goods_x_betas_M2_full //the total effect
+
+//for one particular regression
+regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == "Accessories for information processing equipment", nocon
+regress price jan feb mar apr may jun jul aug sep oct nov M7_2020 M8_2020 M9_2020 M10_2020 M11_2020 M12_2020 M1_2021 M2_2021 if COICOP == "Accessories for information processing equipment", nocon
+
+pwcorr M8_2020 M9_2020
