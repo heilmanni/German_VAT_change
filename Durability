@@ -1,0 +1,670 @@
+/* This document's goal is to analyse the durability and the relation between
+ VAT-asymmetria and the durability of goods */
+
+
+******************* PART 2: BENEDEK ET AL. (2020) DATA *************************
+
+clear
+ 
+*Import the cleaned data
+import excel "C:\Users\Istvan\Documents\BCE Mester\Szakdolgozat\Adatok\03.28\Durab_Benedek_fin.xlsx", sheet("Munka1") firstrow
+
+*Change the format of the data by creating new ones and dropping old ones
+gen weights = real(Weightinginpermill)
+drop Weightinginpermill
+
+forvalues i = 1(1)74 {
+gen Per`i'  = real(TIME`i')
+drop TIME`i'
+}
+
+*Reshaping data from wide to long for calculations
+reshape long Per, i( COICOP ) j(per)
+rename Per price
+rename Services service
+rename Durability durability
+
+*Generate new variables for the months of VAT change
+//2020M7 introducing new VAT rates
+gen M7_2020 = 1 if per == 67
+replace M7_2020 = 0 if missing(M7_2020)
+
+//2021M1: set back to the previous VAT
+gen M1_2021 = 1 if per == 73
+replace M1_2021 = 0 if missing(M1_2021)
+
+*Generate new variables
+gen M6_2020 = 1 if per == 66
+replace M6_2020 = 0 if missing(M6_2020)
+gen M8_2020 = 1 if per == 68
+replace M8_2020 = 0 if missing(M8_2020)
+gen M9_2020 = 1 if per == 69
+replace M9_2020 = 0 if missing(M9_2020)
+gen M10_2020 = 1 if per == 70
+replace M10_2020 = 0 if missing(M10_2020)
+gen M11_2020 = 1 if per == 71
+replace M11_2020 = 0 if missing(M11_2020)
+gen M12_2020 = 1 if per == 72
+replace M12_2020 = 0 if missing(M12_2020)
+gen M2_2021 = 1 if per == 74
+replace M2_2021 = 0 if missing(M2_2021)
+
+
+*Creating variables for each months
+gen time = mod(per,12)
+replace time = 12 if time == 0
+
+gen jan = 1 if time == 1
+replace jan = 0 if missing(jan)
+gen feb = 1 if time == 2
+replace feb = 0 if missing(feb)
+gen mar = 1 if time == 3
+replace mar = 0 if missing(mar)
+gen apr = 1 if time == 4
+replace apr = 0 if missing(apr)
+gen may = 1 if time == 5
+replace may = 0 if missing(may)
+gen jun = 1 if time == 6
+replace jun = 0 if missing(jun)
+gen jul = 1 if time == 7
+replace jul = 0 if missing(jul)
+gen aug = 1 if time == 8
+replace aug = 0 if missing(aug)
+gen sep = 1 if time == 9
+replace sep = 0 if missing(sep)
+gen oct = 1 if time == 10
+replace oct = 0 if missing(oct)
+gen nov = 1 if time == 11
+replace nov = 0 if missing(nov)
+gen dec = 1 if time == 12
+replace dec = 0 if missing(dec)
+
+*length of the database (number of different items):
+count if per == 1 //506
+
+total weights if level == 4 & per == 1 //this is 1000
+total weights if (level == 4 | level == 5) & per == 1 & (normal == 1 | reduced == 1 | taxfree == 1 | hospitality  == 1) & correction != 1 //this is 1000.12 due to level 5 items whose value are rounded
+//the correction category is denoting items on level 4 which are not homogenous in regard of vat-rate (normal + red + taxfree + hosp != 1)
+
+
+//to set timeseries
+generate time2 = _n
+tsset time2
+
+
+
+************************* 1. NONDURABLE GOODS **********************************
+
+************************* 1. A: STANDARD RATE **********************************
+
+*Creating the relative weights of nondurables, normal rate on level 4 or 5
+gen nondur_4_5_norm = 1 if normal == 1 & durability == 0 & (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if nondur_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_nondur_norm = nondur_4_5_norm*weights/352.97 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_nondur_norm
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_nondur_norm = COICOP if per == 1 & nondur_4_5_norm == 1 
+
+
+//generate vars for betas
+gen betas_nondur_norm_M7 = .
+gen betas_nondur_norm_M8 = .
+gen betas_nondur_norm_M12 = .
+gen betas_nondur_norm_M1 = .
+gen betas_nondur_norm_M2 = .
+
+//generate vars for the p-values
+gen p_nondur_norm_M7 = .
+gen p_nondur_norm_M8 = .
+gen p_nondur_norm_M12 = .
+gen p_nondur_norm_M1 = .
+gen p_nondur_norm_M2 = .
+
+gen resid_nondur_norm = .
+gen wnp_nondur_norm = .
+gen resid_mean_nondur_norm = .
+
+
+//the regressions
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_nondur_norm[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_nondur_norm[rownumber], nocon //regress just the particular item
+	quietly replace betas_nondur_norm_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_nondur_norm_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_nondur_norm_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_nondur_norm_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_nondur_norm_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_nondur_norm_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by the p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_nondur_norm_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_nondur_norm_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_nondur_norm_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_nondur_norm_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	/*quietly predict resid, residuals
+	quietly replace resid_nondur_norm = resid if COICOP == abbr_nondur_norm[rownumber]
+	quietly wntestq resid_nondur_norm if COICOP == abbr_nondur_norm[rownumber] //Portmantue test
+	quietly replace wnp_nondur_norm = r(p) if _n == rownumber
+	quietly sum resid_nondur_norm if COICOP == abbr_nondur_norm[rownumber]
+	quietly replace resid_mean_nondur_norm = r(mean) if _n == rownumber*/
+	quietly est clear
+	//quietly drop resid
+	}
+	drop rownumber
+}
+
+
+gen rel_nondur_norm_betasM7 = rel_w_nondur_norm*betas_nondur_norm_M7
+gen rel_nondur_norm_betasM8 = rel_w_nondur_norm*betas_nondur_norm_M8
+gen rel_nondur_norm_betasM12 = rel_w_nondur_norm*betas_nondur_norm_M12
+gen rel_nondur_norm_betasM1 = rel_w_nondur_norm*betas_nondur_norm_M1
+gen rel_nondur_norm_betasM2 = rel_w_nondur_norm*betas_nondur_norm_M2
+
+//Asymmetry
+gen asym_nondur_norm = betas_nondur_norm_M7 + betas_nondur_norm_M1
+
+
+//Total effect
+total rel_nondur_norm_betasM7
+total rel_nondur_norm_betasM8
+total rel_nondur_norm_betasM12
+total rel_nondur_norm_betasM1
+total rel_nondur_norm_betasM2
+
+
+//how many times are the betas significant?
+count if p_nondur_norm_M7 != . //all
+count if p_nondur_norm_M7 != . & p_nondur_norm_M7 < 0.05 
+//count if p_nondur_norm_M8 != . //all
+count if p_nondur_norm_M8 != . & p_nondur_norm_M8 < 0.05 
+//count if p_nondur_norm_M12 != . //all
+count if p_nondur_norm_M12 != . & p_nondur_norm_M12 < 0.05 
+//count if p_nondur_norm_M1 != . //all
+count if p_nondur_norm_M1 != . & p_nondur_norm_M1 < 0.05 
+//count if p_nondur_norm_M2 != . //all
+count if p_nondur_norm_M2 != . & p_nondur_norm_M2 < 0.05 
+
+
+
+//how many times autocorrelation has remained in the residuals
+//count if wnp_nondur_norm != . //all
+//count if wnp_nondur_norm != . & wnp_nondur_norm < 0.05 //when we reject that residuals are WN (alfa = 5%)
+
+
+
+************************* 1. B: REDUCED RATE **********************************
+
+*Creating the relative weights of nondurables, reduced rate on level 4 or 5
+gen nondur_4_5_red = 1 if reduced == 1 & durability == 0 & (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if nondur_4_5_red == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_nondur_red = nondur_4_5_red*weights/110.14 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_nondur_red
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_nondur_red = COICOP if per == 1 & nondur_4_5_red == 1 
+
+
+//generate vars for betas
+gen betas_nondur_red_M7 = .
+gen betas_nondur_red_M8 = .
+gen betas_nondur_red_M12 = .
+gen betas_nondur_red_M1 = .
+gen betas_nondur_red_M2 = .
+
+//generate vars for the p-values
+gen p_nondur_red_M7 = .
+gen p_nondur_red_M8 = .
+gen p_nondur_red_M12 = .
+gen p_nondur_red_M1 = .
+gen p_nondur_red_M2 = .
+
+gen resid_nondur_red = .
+gen wnp_nondur_red = .
+gen resid_mean_nondur_red = .
+
+
+//the regressions
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_nondur_red[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_nondur_red[rownumber], nocon //regress just the particular item
+	quietly replace betas_nondur_red_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_nondur_red_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_nondur_red_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_nondur_red_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_nondur_red_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_nondur_red_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by the p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_nondur_red_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_nondur_red_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_nondur_red_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_nondur_red_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	/*quietly predict resid, residuals
+	quietly replace resid_nondur_red = resid if COICOP == abbr_nondur_red[rownumber]
+	quietly wntestq resid_nondur_red if COICOP == abbr_nondur_red[rownumber] //Portmantue test
+	quietly replace wnp_nondur_red = r(p) if _n == rownumber
+	quietly sum resid_nondur_red if COICOP == abbr_nondur_red[rownumber]
+	quietly replace resid_mean_nondur_red = r(mean) if _n == rownumber*/
+	quietly est clear
+	//quietly drop resid
+	}
+	drop rownumber
+}
+
+
+gen rel_nondur_red_betasM7 = rel_w_nondur_red*betas_nondur_red_M7
+gen rel_nondur_red_betasM8 = rel_w_nondur_red*betas_nondur_red_M8
+gen rel_nondur_red_betasM12 = rel_w_nondur_red*betas_nondur_red_M12
+gen rel_nondur_red_betasM1 = rel_w_nondur_red*betas_nondur_red_M1
+gen rel_nondur_red_betasM2 = rel_w_nondur_red*betas_nondur_red_M2
+
+//Asymmetry
+gen asym_nondur_red = betas_nondur_red_M7 + betas_nondur_red_M1
+
+
+//Total effect
+total rel_nondur_red_betasM7
+total rel_nondur_red_betasM8
+total rel_nondur_red_betasM12
+total rel_nondur_red_betasM1
+total rel_nondur_red_betasM2
+
+
+//how many times are the betas significant?
+count if p_nondur_red_M7 != . //all
+count if p_nondur_red_M7 != . & p_nondur_red_M7 < 0.05 
+//count if p_nondur_red_M8 != . //all
+count if p_nondur_red_M8 != . & p_nondur_red_M8 < 0.05 
+//count if p_nondur_red_M12 != . //all
+count if p_nondur_red_M12 != . & p_nondur_red_M12 < 0.05 
+//count if p_nondur_red_M1 != . //all
+count if p_nondur_red_M1 != . & p_nondur_red_M1 < 0.05 
+//count if p_nondur_red_M2 != . //all
+count if p_nondur_red_M2 != . & p_nondur_red_M2 < 0.05
+
+
+
+//how many times autocorrelation has remained in the residuals
+//count if wnp_nondur_red != . //all
+//count if wnp_nondur_red != . & wnp_nondur_red < 0.05 //when we reject that residuals are WN (alfa = 5%)
+
+
+
+******************************** 2. DURABLES ***********************************
+
+*Creating the relative weights of nondurables, normal rate on level 4 or 5
+gen dur_4_5_norm = 1 if normal == 1 & durability == 1 & (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if dur_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_dur_norm = dur_4_5_norm*weights/97.04 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_dur_norm
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_dur_norm = COICOP if per == 1 & dur_4_5_norm == 1 
+
+
+//generate vars for betas
+gen betas_dur_norm_M7 = .
+gen betas_dur_norm_M8 = .
+gen betas_dur_norm_M12 = .
+gen betas_dur_norm_M1 = .
+gen betas_dur_norm_M2 = .
+
+//generate vars for the p-values
+gen p_dur_norm_M7 = .
+gen p_dur_norm_M8 = .
+gen p_dur_norm_M12 = .
+gen p_dur_norm_M1 = .
+gen p_dur_norm_M2 = .
+
+gen resid_dur_norm = .
+gen wnp_dur_norm = .
+gen resid_mean_dur_norm = .
+
+
+//the regressions
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_dur_norm[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_dur_norm[rownumber], nocon //regress just the particular item
+	quietly replace betas_dur_norm_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_dur_norm_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_dur_norm_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_dur_norm_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_dur_norm_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_dur_norm_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by the p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_dur_norm_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_dur_norm_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_dur_norm_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_dur_norm_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	/*quietly predict resid, residuals
+	quietly replace resid_dur_norm = resid if COICOP == abbr_dur_norm[rownumber]
+	quietly wntestq resid_dur_norm if COICOP == abbr_dur_norm[rownumber] //Portmantue test
+	quietly replace wnp_dur_norm = r(p) if _n == rownumber
+	quietly sum resid_dur_norm if COICOP == abbr_dur_norm[rownumber]
+	quietly replace resid_mean_dur_norm = r(mean) if _n == rownumber*/
+	quietly est clear
+	//quietly drop resid
+	}
+	drop rownumber
+}
+
+
+gen rel_dur_norm_betasM7 = rel_w_dur_norm*betas_dur_norm_M7
+gen rel_dur_norm_betasM8 = rel_w_dur_norm*betas_dur_norm_M8
+gen rel_dur_norm_betasM12 = rel_w_dur_norm*betas_dur_norm_M12
+gen rel_dur_norm_betasM1 = rel_w_dur_norm*betas_dur_norm_M1
+gen rel_dur_norm_betasM2 = rel_w_dur_norm*betas_dur_norm_M2
+
+//Asymmetry
+gen asym_dur_norm = betas_dur_norm_M7 + betas_dur_norm_M1
+
+
+//Total effects
+total rel_dur_norm_betasM7
+total rel_dur_norm_betasM8
+total rel_dur_norm_betasM12
+total rel_dur_norm_betasM1
+total rel_dur_norm_betasM2
+
+
+//how many times are the betas significant?
+count if p_dur_norm_M7 != . //all
+count if p_dur_norm_M7 != . & p_dur_norm_M7 < 0.05 
+//count if p_dur_norm_M8 != . //all
+count if p_dur_norm_M8 != . & p_dur_norm_M8 < 0.05 
+//count if p_dur_norm_M12 != . //all
+count if p_dur_norm_M12 != . & p_dur_norm_M12 < 0.05 
+//count if p_dur_norm_M1 != . //all
+count if p_dur_norm_M1 != . & p_dur_norm_M1 < 0.05 
+//count if p_dur_norm_M2 != . //all
+count if p_dur_norm_M2 != . & p_dur_norm_M2 < 0.05 
+
+
+
+//how many times autocorrelation has remained in the residuals
+//count if wnp_dur_norm != . //all
+//count if wnp_dur_norm != . & wnp_dur_norm < 0.05 //when we reject that residuals are WN (alfa = 5%)
+
+
+
+******************************* GENERAL RESULTS ********************************
+
+********************************* NORMAL RATE **********************************
+
+//Creating the relative weights of nondurables, normal rate on level 4 or 5 which are durable or non-durable
+gen gen_4_5_norm = 1 if normal == 1 & durability != 2 & (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if gen_4_5_norm == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_gen_norm = gen_4_5_norm*weights/450.01 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_gen_norm
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_gen_norm = COICOP if per == 1 & gen_4_5_norm == 1 
+
+
+//generate vars for betas
+gen betas_gen_norm_M7 = .
+gen betas_gen_norm_M8 = .
+gen betas_gen_norm_M12 = .
+gen betas_gen_norm_M1 = .
+gen betas_gen_norm_M2 = .
+
+//generate vars for the p-values
+gen p_gen_norm_M7 = .
+gen p_gen_norm_M8 = .
+gen p_gen_norm_M12 = .
+gen p_gen_norm_M1 = .
+gen p_gen_norm_M2 = .
+
+gen resid_gen_norm = .
+gen wnp_gen_norm = .
+gen resid_mean_gen_norm = .
+
+
+//the regressions
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_gen_norm[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_gen_norm[rownumber], nocon //regress just the particular item
+	quietly replace betas_gen_norm_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_gen_norm_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_gen_norm_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_gen_norm_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_gen_norm_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_gen_norm_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by the p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_gen_norm_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_gen_norm_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_gen_norm_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_gen_norm_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	/*quietly predict resid, residuals
+	quietly replace resid_gen_norm = resid if COICOP == abbr_gen_norm[rownumber]
+	quietly wntestq resid_gen_norm if COICOP == abbr_gen_norm[rownumber] //Portmantue test
+	quietly replace wnp_gen_norm = r(p) if _n == rownumber
+	quietly sum resid_gen_norm if COICOP == abbr_gen_norm[rownumber]
+	quietly replace resid_mean_gen_norm = r(mean) if _n == rownumber
+	quietly drop resid */
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_gen_norm_betasM7 = rel_w_gen_norm*betas_gen_norm_M7
+gen rel_gen_norm_betasM8 = rel_w_gen_norm*betas_gen_norm_M8
+gen rel_gen_norm_betasM12 = rel_w_gen_norm*betas_gen_norm_M12
+gen rel_gen_norm_betasM1 = rel_w_gen_norm*betas_gen_norm_M1
+gen rel_gen_norm_betasM2 = rel_w_gen_norm*betas_gen_norm_M2
+
+//Asymmetry
+gen asym_gen_norm = betas_gen_norm_M7 + betas_gen_norm_M1
+
+
+//Total effects
+total rel_gen_norm_betasM7
+total rel_gen_norm_betasM8
+total rel_gen_norm_betasM12
+total rel_gen_norm_betasM1
+total rel_gen_norm_betasM2
+
+
+//how many times are the betas significant?
+count if p_gen_norm_M7 != . //all
+count if p_gen_norm_M7 != . & p_gen_norm_M7 < 0.05 
+//count if p_gen_norm_M8 != . //all
+count if p_gen_norm_M8 != . & p_gen_norm_M8 < 0.05 
+//count if p_gen_norm_M12 != . //all
+count if p_gen_norm_M12 != . & p_gen_norm_M12 < 0.05 
+//count if p_gen_norm_M1 != . //all
+count if p_gen_norm_M1 != . & p_gen_norm_M1 < 0.05 
+//count if p_gen_norm_M2 != . //all
+count if p_gen_norm_M2 != . & p_gen_norm_M2 < 0.05 
+
+
+//how many times autocorrelation has remained in the residuals
+//count if wnp_gen_norm != . //all
+//count if wnp_gen_norm != . & wnp_gen_norm < 0.05 //when we reject that residuals are WN (alfa = 5%)
+
+
+********************************* REDUCED RATE **********************************
+
+//Creating the relative weights of nondurables, reduced rate on level 4 or 5 which are durable or non-durable
+gen gen_4_5_red = 1 if reduced == 1 & durability != 2 & (level == 4 | level == 5) & correction != 1
+
+//the total of weights in case of level 4 and 5 goods and period is 1
+total weights if gen_4_5_red == 1 & per == 1
+
+//generating a variable with relative weigths if goods are on level 4 or 5
+gen rel_w_gen_red = gen_4_5_red*weights/110.76 if per == 1
+
+//everything is correct, the sum of the weights is 1
+total rel_w_gen_red
+
+
+//writing the name of the items to a new column if period is 1 and goods_4_5 == 1
+gen abbr_gen_red = COICOP if per == 1 & gen_4_5_red == 1 
+
+
+//generate vars for betas
+gen betas_gen_red_M7 = .
+gen betas_gen_red_M8 = .
+gen betas_gen_red_M12 = .
+gen betas_gen_red_M1 = .
+gen betas_gen_red_M2 = .
+
+//generate vars for the p-values
+gen p_gen_red_M7 = .
+gen p_gen_red_M8 = .
+gen p_gen_red_M12 = .
+gen p_gen_red_M1 = .
+gen p_gen_red_M2 = .
+
+gen resid_gen_red = .
+gen wnp_gen_red = .
+gen resid_mean_gen_red = .
+
+
+//the regressions
+forvalues i = 1(1)506{
+	gen rownumber = 74*(`i'-1)+1 //these are the lines where period == 1
+	if COICOP[rownumber] == abbr_gen_red[rownumber] { //if the abbr is not empty in this row
+	quietly eststo: quietly regress price jan feb mar apr may jun jul aug sep oct nov  M7_2020 M8_2020 M12_2020 M1_2021 M2_2021 if COICOP == abbr_gen_red[rownumber], nocon //regress just the particular item
+	quietly replace betas_gen_red_M7 = _b[M7_2020] if _n == rownumber
+	quietly replace betas_gen_red_M8 = _b[M8_2020] if _n == rownumber
+	quietly replace betas_gen_red_M12 = _b[M12_2020] if _n == rownumber
+	quietly replace betas_gen_red_M1 = _b[M1_2021] if _n == rownumber
+	quietly replace betas_gen_red_M2 = _b[M2_2021] if _n == rownumber
+	gen t1 = _b[M7_2020]/_se[M7_2020] //t stat
+	quietly replace p_gen_red_M7 = 2*ttail(e(df_r),abs(t1)) if _n == rownumber //replacing by the p-value
+	gen t2 = _b[M8_2020]/_se[M8_2020] 
+	quietly replace p_gen_red_M8 = 2*ttail(e(df_r),abs(t2)) if _n == rownumber
+	gen t3 = _b[M12_2020]/_se[M12_2020]
+	quietly replace p_gen_red_M12 = 2*ttail(e(df_r),abs(t3)) if _n == rownumber
+	gen t4 = _b[M1_2021]/_se[M1_2021]
+	quietly replace p_gen_red_M1 = 2*ttail(e(df_r),abs(t4)) if _n == rownumber
+	gen t5 = _b[M2_2021]/_se[M2_2021]
+	quietly replace p_gen_red_M2 = 2*ttail(e(df_r),abs(t5)) if _n == rownumber
+	quietly drop t1 t2 t3 t4 t5
+	/*quietly predict resid, residuals
+	quietly replace resid_gen_red = resid if COICOP == abbr_gen_red[rownumber]
+	quietly wntestq resid_gen_red if COICOP == abbr_gen_red[rownumber] //Portmantue test
+	quietly replace wnp_gen_red = r(p) if _n == rownumber
+	quietly sum resid_gen_red if COICOP == abbr_gen_red[rownumber]
+	quietly replace resid_mean_gen_red = r(mean) if _n == rownumber
+	quietly drop resid */
+	quietly est clear
+	}
+	drop rownumber
+}
+
+
+gen rel_gen_red_betasM7 = rel_w_gen_red*betas_gen_red_M7
+gen rel_gen_red_betasM8 = rel_w_gen_red*betas_gen_red_M8
+gen rel_gen_red_betasM12 = rel_w_gen_red*betas_gen_red_M12
+gen rel_gen_red_betasM1 = rel_w_gen_red*betas_gen_red_M1
+gen rel_gen_red_betasM2 = rel_w_gen_red*betas_gen_red_M2
+
+//Asymmetry
+gen asym_gen_red = betas_gen_red_M7 + betas_gen_red_M1
+
+
+//Total effects
+total rel_gen_red_betasM7
+total rel_gen_red_betasM8
+total rel_gen_red_betasM12
+total rel_gen_red_betasM1
+total rel_gen_red_betasM2
+
+
+//how many times are the betas significant?
+count if p_gen_red_M7 != . //all
+count if p_gen_red_M7 != . & p_gen_red_M7 < 0.05 
+//count if p_gen_red_M8 != . //all
+count if p_gen_red_M8 != . & p_gen_red_M8 < 0.05 
+//count if p_gen_red_M12 != . //all
+count if p_gen_red_M12 != . & p_gen_red_M12 < 0.05 
+//count if p_gen_red_M1 != . //all
+count if p_gen_red_M1 != . & p_gen_red_M1 < 0.05 
+//count if p_gen_red_M2 != . //all
+count if p_gen_red_M2 != . & p_gen_red_M2 < 0.05 
+
+
+//how many times autocorrelation has remained in the residuals
+//count if wnp_gen_red != . //all
+//count if wnp_gen_red != . & wnp_gen_red < 0.05 //when we reject that residuals are WN (alfa = 5%)
+
+
+
+
+************************ SOME ADDITIONAL ANALYSIS ******************************
+
+//The asymetries in one variable
+gen asym_all = asym_dur_norm
+replace asym_all = asym_nondur_red if asym_all == .
+replace asym_all = asym_nondur_norm if asym_all == .
+
+//Testing similarly to Peltzman (2000)
+reg asym_all durability if asym_all != ., nocon
+
+
+//Connection between general betas and durability
+reg betas_gen_norm_M7 durab, nocon
+reg betas_gen_red_M7 durab, nocon
+reg betas_gen_norm_M8 durab, nocon
+reg betas_gen_red_M8 durab, nocon
+reg betas_gen_norm_M12 durab, nocon
+reg betas_gen_red_M12 durab, nocon
+reg betas_gen_norm_M1 durab, nocon
+reg betas_gen_red_M1 durab, nocon
+reg betas_gen_norm_M2 durab, nocon
+reg betas_gen_red_M2 durab, nocon
+
