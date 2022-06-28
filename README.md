@@ -8,8 +8,8 @@ Final.xlsx contains the cleaned data, used in the first and second part (2021, 2
 
 Figures.do creates the figures in Heilmann 2021
 
-Anticipation_effect, Asymmetry and Durability are modifications of the original code (Final_analyses), calibrated to the relevant research question
+Anticipation_effect, Asymmetry and Durability are modifications of the original code (Final_analyses), calibrated to the relevant research question - all used in Heilmann 2022
 
-Bootstrap.do is for the bootstrapping parts - however, after one run the data need to be reset
+Bootstrap.do is for the bootstrapping parts - however, after one run the data need to be reset (2022)
 
-Bootstrap.xlsx contains the first 100 runs results for the three main subcategory
+Bootstrap.xlsx contains the first 100 runs results for the three main subcategory (2022)
